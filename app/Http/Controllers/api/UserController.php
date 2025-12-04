@@ -6,89 +6,75 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\User\UpdateUserRequest;
 use App\Http\Resources\UserResource;
 use App\Models\User;
+use App\Services\UserService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
-use Tymon\JWTAuth\Exceptions\JWTException;
 
 class UserController extends Controller
 {
 
     use AuthorizesRequests;
+    protected UserService $userService;
+
     /**
-     * Display a listing of the resource.
+     * Inject UserService
+     */
+    public function __construct(UserService $userService)
+    {
+        $this->userService = $userService;
+    }
+
+    /**
+     * List users
      */
     public function index()
     {
-
-$users = User::with(['roles:id,name'])
-    ->select('id', 'name', 'email', 'created_at')
-    ->paginate(15);
-        return $this->success(
-          UserResource::collection($users));
-    }
-
-
-    /**
-     * Show a single user.
-     *
-     * @param User $user
-     * @return JsonResponse
-     */
-    public function show(User $user) 
-    {
-                try {
-         
-            if (!$user) {
-                return $this->error(['error' => 'User not found'], 404);
-            }
-        return $this->success(new UserResource($user));
-        } catch (JWTException $e) {
-            return $this->error(['error' => 'Failed to fetch user profile'], 500);
-        }
-
+        $this->authorize('viewAny', User::class);
+        $users = $this->userService->getUsers();
+        return $this->success(UserResource::collection($users));
     }
 
     /**
-     * Update a user. Owner or admin should be allowed.
-     *
-     * @param UpdateUserRequest $request
-     * @param User $user
-     * @return JsonResponse
+     * Show user by model binding
      */
-    public function update(UpdateUserRequest $request, User $user) 
+    public function show(User $user)
     {
-        // Optionally enforce policy: $this->authorize('update', $user);
-
-        $data = $request->validated();
-
-         
-        $user->fill($data);
-        $user->save();
-
+        $this->authorize('view', $user);
+        $user = $this->userService->getUser($user);
         return $this->success(new UserResource($user));
     }
 
     /**
-     * Delete a user (admin or owner).
-     *
-     * @param User $user
-     * @return JsonResponse
+     * Update user
      */
-    public function destroy(User $user) 
+    public function update(UpdateUserRequest $request, User $user)
     {
-        $user->delete();
+        $this->authorize('update', $user);
+        $user = $this->userService->updateUser($user, $request->validated());
+        return $this->success(new UserResource($user));
+    }
+
+    /**
+     * Delete user
+     */
+    public function destroy(User $user)
+    {
+        $this->authorize('delete', $user);
+        $this->userService->deleteUser($user);
         return $this->success(['message' => 'User deleted successfully']);
     }
 
+    /**
+     * Assign Admin role
+     */
     public function makeAdmin(User $user)
-{
-    $this->authorize('assignAdmin', User::class);
+    {
+        $this->authorize('assignAdmin', User::class);
 
-    $user->syncRoles(['Admin']);
+        $user = $this->userService->assignAdmin($user);
 
-    return $this->success([
-        'message' => 'User promoted to Admin',
-        'user' =>new UserResource($user)
-    ]);
-}
-
+        return $this->success([
+            'message' => 'User promoted to Admin',
+            'user' => new UserResource($user),
+        ]);
+    }
 }
